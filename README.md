@@ -44,9 +44,28 @@ Defaults live in `src/main/resources/application.properties`, and can be overrid
 
 API: `http://localhost:8080` · Swagger: `http://localhost:8080/swagger-ui.html`
 
-### 3. Seed data
+### 3. Data & seeding
 
-`config/DataSeeder.java` runs on startup **only when the products table is empty**. It creates:
+The PostgreSQL database is the **single source of truth** — the app never inserts or resets catalogue data on startup. Products, categories, variants, reviews and orders are managed dynamically through the admin panel (`/admin`).
+
+A one-time demo catalogue lives in `config/DataSeeder.java` but is **disabled by default**:
+
+```properties
+app.seed.enabled=false
+```
+
+To populate a brand new (empty) database once:
+
+```bash
+# Windows
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.arguments="--app.seed.enabled=true"
+# macOS / Linux
+./mvnw spring-boot:run -Dspring-boot.run.arguments="--app.seed.enabled=true"
+```
+
+Then set it back to `false` (or just restart normally). Even when enabled, the seeder exits immediately if any product already exists, so it can never duplicate or overwrite your data.
+
+The demo catalogue (when enabled) creates:
 
 - 8 categories (fashion + beauty)
 - ~34 products with Pakistani pricing (PKR), brands (Rangva Studio, Sadaa, Naya, Zaitoon, Kiraan, Meher) and departments (`FASHION` / `BEAUTY`)

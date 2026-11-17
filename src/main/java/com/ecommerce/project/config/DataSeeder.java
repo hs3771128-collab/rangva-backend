@@ -12,6 +12,7 @@ import com.ecommerce.project.repository.ReviewRepository;
 import com.ecommerce.project.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,11 +23,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Seeds the Rangva catalogue the first time the application starts against an
- * empty products table. Safe to run repeatedly: it exits early when data exists.
+ * Optional one-time demo catalogue. Disabled by default so the live database is
+ * never touched on startup; enable it with {@code app.seed.enabled=true} when you
+ * explicitly want to populate a brand new database. Even when enabled it exits
+ * early if any product already exists.
  */
 @Component
 @Order(2)
+@ConditionalOnProperty(prefix = "app.seed", name = "enabled", havingValue = "true")
 public class DataSeeder implements CommandLineRunner {
 
     @Autowired
