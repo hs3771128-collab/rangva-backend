@@ -82,6 +82,8 @@ public class WebSecurityConfig {
                                 .requestMatchers("/api/seller/**").hasAnyRole("ADMIN", "SELLER")
                                 //.requestMatchers("/api/admin/**").permitAll()
                                 .requestMatchers("/api/public/**").permitAll()
+                                // Gateways POST the payment result here; each callback is signature-checked.
+                                .requestMatchers("/api/payments/*/callback").permitAll()
                                 .requestMatchers("/swagger-ui/**").permitAll()
                                 .requestMatchers("/api/test/**").permitAll()
                                 .requestMatchers("/images/**").permitAll()

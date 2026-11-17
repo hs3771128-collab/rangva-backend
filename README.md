@@ -34,6 +34,8 @@ Defaults live in `src/main/resources/application.properties`, and can be overrid
 | `PG_DB_USERNAME` | `postgres` | DB user |
 | `PG_DB_PASSWORD` | `12345` | DB password |
 | `IMAGE_BASE_URL` | `http://localhost:8080/images` | Prefix for stored image filenames |
+| `PAYMENTS_BACKEND_BASE_URL` | `http://localhost:8080` | **Public** backend URL used for gateway callbacks |
+| `PAYMENTS_FRONTEND_RETURN_URL` | `http://localhost:5173/order-confirm` | Where the gateway sends the customer back |
 
 ```bash
 # Windows
@@ -73,6 +75,42 @@ The demo catalogue (when enabled) creates:
 - 12 sample reviews
 
 Default accounts: `admin` / `adminPass`, plus `user1` / `password1` and `seller1` / `password2`.
+
+### 4. Payment gateways (JazzCash + Easypaisa)
+
+Online payments use the **hosted checkout** pages of JazzCash and Easypaisa: the store never receives card or wallet credentials. Credentials are read from environment variables, so nothing secret is committed to git. A gateway is only offered at checkout when it is enabled *and* its credentials are set.
+
+```properties
+# JazzCash merchant form
+JAZZCASH_ENABLED=true
+JAZZCASH_SANDBOX=false          # true while testing
+JAZZCASH_MERCHANT_ID=...
+JAZZCASH_PASSWORD=...
+JAZZCASH_INTEGRITY_SALT=...
+
+# Easypaisa Easypay
+EASYPAISA_ENABLED=true
+EASYPAISA_SANDBOX=false         # true while testing
+EASYPAISA_STORE_ID=...
+EASYPAISA_HASH_KEY=...
+EASYPAISA_PAYMENT_METHOD=MA     # MA (mobile account), OTC, CC
+EASYPAISA_EMAIL=...
+
+# Gateway callbacks must reach this backend over the public internet
+PAYMENTS_BACKEND_BASE_URL=https://api.your-domain.pk
+PAYMENTS_FRONTEND_RETURN_URL=https://your-domain.pk/order-confirm
+```
+
+How the flow works:
+
+1. The customer places an order. It is saved as `PENDING_PAYMENT` with payment `PENDING` — **nothing is marked paid yet**.
+2. `POST /api/payments/{jazzcash|easypaisa}/init` returns the gateway URL plus a **signed** form; the storefront auto-submits it.
+3. The gateway redirects the customer to its payment page.
+4. The gateway POSTs the result to `/api/payments/{gateway}/callback`.
+
+JazzCash callbacks are verified with `pp_SecureHash` (HMAC-SHA256 over the integrity salt and the sorted `pp_*` values). Easypaisa requests are signed with `merchantHashedReq` (HMAC-MD5, Base64) and the callback is matched on `storeId`, `orderRefNum` and amount. Only after those checks does the order move to `CONFIRMED` / payment `PAID`; a failed or tampered callback leaves it unpaid (`PAYMENT_FAILED`) so the customer can retry from the confirmation page.
+
+> While developing on localhost, point `PAYMENTS_BACKEND_BASE_URL` at a tunnel (for example `ngrok http 8080`) and register that callback URL in the JazzCash/Easypaisa merchant portal.
 
 ## Domain model
 
@@ -140,12 +178,17 @@ Prices are stored as plain PKR numbers. Delivery rules are applied server-side a
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/order/users/payments/{paymentMethod}` | Place order. `CASH_ON_DELIVERY`, `JAZZCASH`, `EASYPAISA`, `BANK_TRANSFER`, `CARD` |
+| POST | `/api/order/users/payments/{paymentMethod}` | Place order. `CASH_ON_DELIVERY`, `JAZZCASH`, `EASYPAISA`, `BANK_TRANSFER` |
+| GET | `/api/order/users/{orderId}` | A customer's own order (used after a gateway redirect) |
+| POST | `/api/payments/{gateway}/init` | Start/retry an online payment, returns the signed gateway form |
+| POST | `/api/payments/jazzcash/callback` | JazzCash result (signature-verified, public) |
+| POST | `/api/payments/easypaisa/callback` | Easypaisa result (verified, public) |
+| GET | `/api/public/payments/methods` | Which gateways are configured |
 | GET | `/api/admin/orders` | Admin order list |
 | GET | `/api/seller/orders` | Seller order list |
 | PUT | `/api/admin/orders/{orderId}/status` | Update status |
 
-COD orders are created as `PLACED`; prepaid methods as `CONFIRMED`. Variant stock is decremented on order placement.
+COD orders are created as `PLACED`; online and bank-transfer orders as `PENDING_PAYMENT` until the payment is verified (then `CONFIRMED`, or `PAYMENT_FAILED` when the gateway reports a failure). Variant stock is decremented on order placement.
 
 ### Addresses
 

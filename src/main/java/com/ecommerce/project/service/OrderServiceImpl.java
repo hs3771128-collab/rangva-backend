@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class OrderServiceImpl implements OrderService {
@@ -58,6 +60,10 @@ public class OrderServiceImpl implements OrderService {
     private static final double FREE_DELIVERY_THRESHOLD = 3000.0;
     private static final double DELIVERY_FEE = 199.0;
 
+    /** Payment methods the storefront is allowed to submit. */
+    private static final Set<String> SUPPORTED_PAYMENT_METHODS = Set.of(
+            "CASH_ON_DELIVERY", "COD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER");
+
     @Override
     @Transactional
     public OrderDTO placeOrder(String emailId, Long addressId, String paymentMethod, String pgName, String pgPaymentId, String pgStatus, String pgResponseMessage) {
@@ -79,22 +85,39 @@ public class OrderServiceImpl implements OrderService {
         double subtotal = cart.getTotalPrice() == null ? 0.0 : cart.getTotalPrice();
         double deliveryFee = subtotal >= FREE_DELIVERY_THRESHOLD ? 0.0 : DELIVERY_FEE;
 
-        boolean cashOnDelivery = paymentMethod != null
-                && (paymentMethod.equalsIgnoreCase("CASH_ON_DELIVERY") || paymentMethod.equalsIgnoreCase("COD"));
+        String normalizedMethod = paymentMethod == null
+                ? "CASH_ON_DELIVERY"
+                : paymentMethod.trim().toUpperCase(Locale.ROOT);
+
+        if (!SUPPORTED_PAYMENT_METHODS.contains(normalizedMethod)) {
+            throw new APIException("Unsupported payment method: " + paymentMethod);
+        }
+
+        boolean cashOnDelivery = normalizedMethod.equals("CASH_ON_DELIVERY") || normalizedMethod.equals("COD");
+        boolean alreadyPaid = "PAID".equalsIgnoreCase(pgStatus) || "COMPLETED".equalsIgnoreCase(pgStatus);
+
+        // Only cash on delivery is settled later by the rider; online and bank
+        // payments stay "pending" until the gateway callback (or admin) confirms them.
+        String orderStatus = cashOnDelivery ? "PLACED" : (alreadyPaid ? "CONFIRMED" : "PENDING_PAYMENT");
 
         // Create a new order with payment info
         Order order = new Order();
         order.setEmail(emailId);
         order.setOrderDate(LocalDate.now());
         order.setTotalAmount(subtotal + deliveryFee);
-        order.setOrderStatus(cashOnDelivery ? "PLACED" : "CONFIRMED");
+        order.setOrderStatus(orderStatus);
         order.setAddress(address);
 
-        Payment payment = new Payment(paymentMethod,
+        String resolvedStatus = pgStatus != null ? pgStatus.toUpperCase(Locale.ROOT)
+                : (alreadyPaid ? "PAID" : "PENDING");
+        String resolvedMessage = pgResponseMessage != null ? pgResponseMessage
+                : (cashOnDelivery ? "Cash on delivery" : "Awaiting payment confirmation");
+
+        Payment payment = new Payment(normalizedMethod,
                 pgPaymentId,
-                pgStatus == null ? (cashOnDelivery ? "PENDING" : "PAID") : pgStatus,
-                pgResponseMessage == null ? (cashOnDelivery ? "Cash on delivery" : "Payment received") : pgResponseMessage,
-                pgName == null ? paymentMethod : pgName);
+                resolvedStatus,
+                resolvedMessage,
+                pgName == null ? normalizedMethod : pgName);
         payment.setOrder(order);
         payment = paymentRepository.save(payment);
         order.setPayment(payment);
@@ -142,6 +165,23 @@ public class OrderServiceImpl implements OrderService {
 
         orderDTO.setAddressId(addressId);
 
+        return orderDTO;
+    }
+
+    @Override
+    @Transactional
+    public OrderDTO getOrderForUser(String emailId, Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "orderId", orderId));
+
+        if (!order.getEmail().equalsIgnoreCase(emailId)) {
+            throw new APIException("This order does not belong to your account");
+        }
+
+        OrderDTO orderDTO = modelMapper.map(order, OrderDTO.class);
+        if (order.getAddress() != null) {
+            orderDTO.setAddressId(order.getAddress().getAddressId());
+        }
         return orderDTO;
     }
 

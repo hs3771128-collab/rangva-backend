@@ -35,6 +35,13 @@ public class OrderController {
         return new ResponseEntity<>(order, HttpStatus.CREATED);
     }
 
+    @GetMapping("/order/users/{orderId}")
+    public ResponseEntity<OrderDTO> getUserOrder(@PathVariable Long orderId) {
+        String emailId = authUtil.loggedInEmail();
+        OrderDTO order = orderService.getOrderForUser(emailId, orderId);
+        return new ResponseEntity<>(order, HttpStatus.OK);
+    }
+
     @GetMapping("/admin/orders")
     public ResponseEntity<OrderResponse> getAllOrders(
             @RequestParam(name = "pageNumber", defaultValue = AppConstants.PAGE_NUMBER, required = false) Integer pageNumber,
