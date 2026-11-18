@@ -169,6 +169,7 @@ Prices are stored as plain PKR numbers. Delivery rules are applied server-side a
 | GET | `/api/public/categories` | Categories |
 | GET | `/api/public/categories/{categoryId}/products` | Products by category |
 | GET | `/api/public/products/keyword/{keyword}` | Keyword search |
+| POST | `/api/public/orders/track` | Public order tracking: `{orderId, contact}` where `contact` is the checkout email or phone. Wrong order/contact returns the same generic 400 so ids cannot be enumerated |
 
 ### Auth
 

@@ -42,6 +42,18 @@ public class OrderController {
         return new ResponseEntity<>(order, HttpStatus.OK);
     }
 
+    /**
+     * Public order tracking. The customer proves ownership with the email or
+     * phone used at checkout, so no login is needed on the tracking page.
+     */
+    @PostMapping("/public/orders/track")
+    public ResponseEntity<OrderTrackingResponse> trackOrder(
+            @jakarta.validation.Valid @RequestBody TrackOrderRequest request) {
+        return new ResponseEntity<>(
+                orderService.trackOrder(request.getOrderId(), request.getContact()),
+                HttpStatus.OK);
+    }
+
     @GetMapping("/admin/orders")
     public ResponseEntity<OrderResponse> getAllOrders(
             @RequestParam(name = "pageNumber", defaultValue = AppConstants.PAGE_NUMBER, required = false) Integer pageNumber,
