@@ -72,7 +72,10 @@ public class AuthServiceImpl implements AuthService {
                 .collect(Collectors.toList());
 
         UserInfoResponse response = new UserInfoResponse(userDetails.getId(),
-                userDetails.getUsername(), roles, userDetails.getEmail(), jwtCookie.toString()); //This jwtCookie.toString() it will give the jwt token in the string formate instead of null
+                userDetails.getUsername(), roles, userDetails.getEmail(), jwtCookie.getValue());
+        // The raw JWT is also returned in the body: the storefront sends it as
+        // "Authorization: Bearer ..." so login survives when the API and the
+        // static site are on different domains and third-party cookies are blocked.
         return new AuthenticationResult(response, jwtCookie);
     }
 

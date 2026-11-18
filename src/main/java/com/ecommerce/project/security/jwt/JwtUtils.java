@@ -36,6 +36,12 @@ public class JwtUtils {
     @Value("${spring.ecom.app.jwtCookieName}")
     private String jwtCookie;
 
+    @Value("${app.auth.cookie-same-site:Lax}")
+    private String cookieSameSite;
+
+    @Value("${app.auth.cookie-secure:false}")
+    private boolean cookieSecure;
+
       //Now we don't need this method bez the cookie will be like jwt token will be passed in the form of cookie and not in form of header
 //    public String getJwtFromHeader(HttpServletRequest request){
 //        String bearerToken = request.getHeader("Authorization");
@@ -70,7 +76,8 @@ public class JwtUtils {
                 .path("/api")
                 .maxAge(24 * 60 * 60) //This is valid for 1 day
                 .httpOnly(false)
-                .secure(false)
+                .secure(cookieSecure)
+                .sameSite(cookieSameSite)
                 .build();
         return cookie;
     }
@@ -80,6 +87,8 @@ public class JwtUtils {
     public ResponseCookie getCleanCookie() {
         ResponseCookie cookie = ResponseCookie.from(jwtCookie, null)
                 .path("/api")
+                .secure(cookieSecure)
+                .sameSite(cookieSameSite)
                 .build();
         return cookie;
     }

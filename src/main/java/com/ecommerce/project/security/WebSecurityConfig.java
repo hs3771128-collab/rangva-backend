@@ -7,6 +7,7 @@ import com.ecommerce.project.repository.RoleRepository;
 import com.ecommerce.project.repository.UserRepository;
 import com.ecommerce.project.security.services.UserDetailsServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,6 +29,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 import com.ecommerce.project.security.jwt.AuthEntryPointJwt;
 import com.ecommerce.project.security.jwt.AuthTokenFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Set;
 
@@ -35,11 +38,21 @@ import java.util.Set;
 @EnableWebSecurity
 //@EnableMethodSecurity
 public class WebSecurityConfig {
+    private static final Logger log = LoggerFactory.getLogger(WebSecurityConfig.class);
+
     @Autowired
     UserDetailsServiceImpl userDetailsService;
 
     @Autowired
     private AuthEntryPointJwt unauthorizedHandler;
+
+    /** Demo logins (user1 / seller1 / admin) are for local development only. */
+    @Value("${app.seed.demo-users-enabled:true}")
+    private boolean demoUsersEnabled;
+
+    /** When set, creates the admin with this password or rotates an existing one. */
+    @Value("${app.seed.admin-password:}")
+    private String adminPasswordOverride;
 
     @Bean
     public AuthTokenFilter authenticationJwtTokenFilter() {
@@ -140,32 +153,56 @@ public class WebSecurityConfig {
             Set<Role> adminRoles = Set.of(userRole, sellerRole, adminRole);
 
 
-            // Create users if not already present
-            if (!userRepository.existsByUserName("user1")) {
-                User user1 = new User("user1", "user1@example.com", passwordEncoder.encode("password1"));
-                userRepository.save(user1);
+            // Demo logins are for local development only. A public deployment sets
+            // APP_SEED_DEMO_USERS=false so these well-known accounts never exist.
+            if (demoUsersEnabled) {
+                if (!userRepository.existsByUserName("user1")) {
+                    User user1 = new User("user1", "user1@example.com", passwordEncoder.encode("password1"));
+                    userRepository.save(user1);
+                }
+
+                if (!userRepository.existsByUserName("seller1")) {
+                    User seller1 = new User("seller1", "seller1@example.com", passwordEncoder.encode("password2"));
+                    userRepository.save(seller1);
+                }
             }
 
-            if (!userRepository.existsByUserName("seller1")) {
-                User seller1 = new User("seller1", "seller1@example.com", passwordEncoder.encode("password2"));
-                userRepository.save(seller1);
-            }
-
+            // The admin account is needed for the dashboard. On a fresh database it
+            // is created only when a password is provided (or demo mode is on), and
+            // APP_SEED_ADMIN_PASSWORD also rotates an existing admin password once.
             if (!userRepository.existsByUserName("admin")) {
-                User admin = new User("admin", "admin@example.com", passwordEncoder.encode("adminPass"));
-                userRepository.save(admin);
+                String password = adminPasswordOverride.isBlank()
+                        ? (demoUsersEnabled ? "adminPass" : null)
+                        : adminPasswordOverride;
+                if (password != null) {
+                    userRepository.save(new User("admin", "admin@example.com", passwordEncoder.encode(password)));
+                    log.info("Created admin account using the configured password.");
+                } else {
+                    log.warn("No admin account exists. Set APP_SEED_ADMIN_PASSWORD once to create one.");
+                }
+            } else if (!adminPasswordOverride.isBlank()) {
+                userRepository.findByUserName("admin").ifPresent(admin -> {
+                    admin.setPassword(passwordEncoder.encode(adminPasswordOverride));
+                    userRepository.save(admin);
+                });
+                log.warn("Admin password rotated from APP_SEED_ADMIN_PASSWORD. Remove that environment variable now.");
+            } else if (!demoUsersEnabled) {
+                log.warn("Admin still uses its existing password. Set APP_SEED_ADMIN_PASSWORD once to rotate it.");
             }
 
-            // Update roles for existing users
-            userRepository.findByUserName("user1").ifPresent(user -> {
-                user.setRoles(userRoles);
-                userRepository.save(user);
-            });
+            // Update roles for existing users. The demo accounts are only kept in
+            // sync in demo mode, so a production deployment can strip their roles.
+            if (demoUsersEnabled) {
+                userRepository.findByUserName("user1").ifPresent(user -> {
+                    user.setRoles(userRoles);
+                    userRepository.save(user);
+                });
 
-            userRepository.findByUserName("seller1").ifPresent(seller -> {
-                seller.setRoles(sellerRoles);
-                userRepository.save(seller);
-            });
+                userRepository.findByUserName("seller1").ifPresent(seller -> {
+                    seller.setRoles(sellerRoles);
+                    userRepository.save(seller);
+                });
+            }
 
             userRepository.findByUserName("admin").ifPresent(admin -> {
                 admin.setRoles(adminRoles);

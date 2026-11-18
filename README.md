@@ -2,6 +2,10 @@
 
 Spring Boot REST API for **Rangva**, a Pakistani hybrid fashion + beauty store. Handles catalogue, variants, reviews, wishlist, cart, Pakistani addresses and cash-on-delivery / local payment orders.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/hs3771128-collab/rangva-backend)
+
+> Free live deployment (Neon + Render + Netlify) ki step-by-step guide: **[DEPLOY.md](DEPLOY.md)**. Dockerfile aur `render.yaml` repo me tayyar hain.
+
 ## Tech stack
 
 | Tool | Version / purpose |
@@ -30,10 +34,17 @@ Defaults live in `src/main/resources/application.properties`, and can be overrid
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
+| `PORT` | `8080` | HTTP port (Render sets this automatically) |
 | `PG_DB_URL` | `jdbc:postgresql://localhost:5432/ecommerce` | JDBC URL |
 | `PG_DB_USERNAME` | `postgres` | DB user |
 | `PG_DB_PASSWORD` | `12345` | DB password |
 | `IMAGE_BASE_URL` | `http://localhost:8080/images` | Prefix for stored image filenames |
+| `APP_CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Comma-separated browser origins allowed to call the API |
+| `AUTH_COOKIE_SAME_SITE` | `Lax` | Set `None` when the storefront and API are on different domains |
+| `AUTH_COOKIE_SECURE` | `false` | Set `true` with `SameSite=None` on HTTPS |
+| `APP_SEED_DEMO_USERS` | `true` | Local demo accounts (`user1`, `seller1`, `admin`); set `false` in production |
+| `APP_SEED_ADMIN_PASSWORD` | *(empty)* | One-time admin password create/rotate; remove after the first boot |
+| `JPA_SHOW_SQL` / `JPA_FORMAT_SQL` | `true` | Disable on a public deployment |
 | `PAYMENTS_BACKEND_BASE_URL` | `http://localhost:8080` | **Public** backend URL used for gateway callbacks |
 | `PAYMENTS_FRONTEND_RETURN_URL` | `http://localhost:5173/order-confirm` | Where the gateway sends the customer back |
 
