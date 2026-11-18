@@ -67,6 +67,10 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderDTO placeOrder(String emailId, Long addressId, String paymentMethod, String pgName, String pgPaymentId, String pgStatus, String pgResponseMessage) {
+        if (addressId == null) {
+            throw new APIException("Delivery address is required");
+        }
+
         // Getting User Cart
         Cart cart = cartRepository.findCartByEmail(emailId);
         if (cart == null) {
