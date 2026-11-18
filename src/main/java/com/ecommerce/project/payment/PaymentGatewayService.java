@@ -57,8 +57,12 @@ public class PaymentGatewayService {
     }
 
     public PaymentMethodsResponse availableMethods() {
-        return new PaymentMethodsResponse(jazzCashGateway.isEnabled(), easypaisaGateway.isEnabled(),
-                safepayGateway.isEnabled());
+        boolean testMode = properties.isTestMode();
+        return new PaymentMethodsResponse(
+                testMode || jazzCashGateway.isEnabled(),
+                testMode || easypaisaGateway.isEnabled(),
+                testMode || safepayGateway.isEnabled(),
+                testMode);
     }
 
     @Transactional
@@ -87,31 +91,52 @@ public class PaymentGatewayService {
         }
 
         GatewayInitResponse response;
+        boolean mock = false;
         switch (name) {
             case JazzCashGateway.NAME -> {
-                requireEnabled(jazzCashGateway.isEnabled(), JazzCashGateway.LABEL);
-                response = jazzCashGateway.init(order);
                 payment.setPaymentMethod("JAZZCASH");
-                payment.setPgName(JazzCashGateway.LABEL);
+                if (jazzCashGateway.isEnabled()) {
+                    response = jazzCashGateway.init(order);
+                    payment.setPgName(JazzCashGateway.LABEL);
+                } else {
+                    requireTestMode(JazzCashGateway.LABEL);
+                    response = mockCheckout(order, JazzCashGateway.NAME, "JAZZCASH");
+                    payment.setPgName(JazzCashGateway.LABEL + " (test)");
+                    mock = true;
+                }
             }
             case EasypaisaGateway.NAME -> {
-                requireEnabled(easypaisaGateway.isEnabled(), EasypaisaGateway.LABEL);
-                response = easypaisaGateway.init(order);
                 payment.setPaymentMethod("EASYPAISA");
-                payment.setPgName(EasypaisaGateway.LABEL);
+                if (easypaisaGateway.isEnabled()) {
+                    response = easypaisaGateway.init(order);
+                    payment.setPgName(EasypaisaGateway.LABEL);
+                } else {
+                    requireTestMode(EasypaisaGateway.LABEL);
+                    response = mockCheckout(order, EasypaisaGateway.NAME, "EASYPAISA");
+                    payment.setPgName(EasypaisaGateway.LABEL + " (test)");
+                    mock = true;
+                }
             }
             case SafepayGateway.NAME -> {
-                requireEnabled(safepayGateway.isEnabled(), SafepayGateway.LABEL);
-                response = safepayGateway.init(order);
                 payment.setPaymentMethod("SAFEPAY");
-                payment.setPgName(SafepayGateway.LABEL);
+                if (safepayGateway.isEnabled()) {
+                    response = safepayGateway.init(order);
+                    payment.setPgName(SafepayGateway.LABEL);
+                } else {
+                    requireTestMode(SafepayGateway.LABEL);
+                    response = mockCheckout(order, SafepayGateway.NAME, "SAFEPAY");
+                    payment.setPgName(SafepayGateway.LABEL + " (test)");
+                    mock = true;
+                }
             }
             default -> throw new APIException("Unknown payment gateway: " + gateway);
         }
 
         payment.setPgStatus(PAYMENT_PENDING);
         payment.setPgPaymentId(response.getReference());
-        payment.setPgResponseMessage("Customer redirected to " + payment.getPgName());
+        payment.setPgResponseMessage(mock
+                ? "Test payment started — no real money moves"
+                : "Customer redirected to " + payment.getPgName());
         paymentRepository.save(payment);
 
         order.setOrderStatus(ORDER_PENDING_PAYMENT);
@@ -286,6 +311,65 @@ public class PaymentGatewayService {
         return new GatewayStatusResponse(order.getOrderId(), current, false, status.message());
     }
 
+    /**
+     * Development-only: approves or fails a simulated payment for a gateway
+     * that has no credentials yet. Refuses to run unless test mode is on.
+     */
+    @Transactional
+    public GatewayStatusResponse completeMockPayment(Long orderId, String gateway, boolean success, String email) {
+        if (!properties.isTestMode()) {
+            throw new APIException("Test payments are disabled");
+        }
+
+        String name = gateway == null ? "" : gateway.trim().toLowerCase(Locale.ROOT);
+        String label = switch (name) {
+            case JazzCashGateway.NAME -> JazzCashGateway.LABEL;
+            case EasypaisaGateway.NAME -> EasypaisaGateway.LABEL;
+            case SafepayGateway.NAME -> SafepayGateway.LABEL;
+            default -> throw new APIException("Unknown payment gateway: " + gateway);
+        };
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "orderId", orderId));
+        if (!order.getEmail().equalsIgnoreCase(email)) {
+            throw new APIException("This order does not belong to your account");
+        }
+
+        Payment payment = order.getPayment();
+        if (payment != null && PAYMENT_PAID.equalsIgnoreCase(payment.getPgStatus())) {
+            return new GatewayStatusResponse(orderId, PAYMENT_PAID, true, "Payment already received");
+        }
+
+        if (success) {
+            String reference = "TEST-" + name.toUpperCase(Locale.ROOT) + "-" + orderId;
+            markPaid(order, reference, "Test payment approved", label);
+            return new GatewayStatusResponse(orderId, PAYMENT_PAID, true, "Test payment approved");
+        }
+
+        markFailed(order, "Test payment declined", label);
+        return new GatewayStatusResponse(orderId, PAYMENT_FAILED, false, "Test payment declined");
+    }
+
+    private void requireTestMode(String label) {
+        if (!properties.isTestMode()) {
+            throw new APIException(label + " is not configured on this store yet");
+        }
+    }
+
+    private GatewayInitResponse mockCheckout(Order order, String gateway, String method) {
+        String base = properties.getFrontendBaseUrl() == null ? "" : properties.getFrontendBaseUrl().trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String url = base + "/mock-gateway?orderId=" + order.getOrderId()
+                + "&gateway=" + gateway
+                + "&method=" + method
+                + "&amount=" + order.getTotalAmount();
+        return new GatewayInitResponse(gateway, url, Map.of(),
+                order.getOrderId(), order.getTotalAmount(),
+                "TEST-" + method + "-" + order.getOrderId() + "-" + System.currentTimeMillis());
+    }
+
     private Order findSafepayOrder(Long orderId, String tracker) {
         if (orderId != null) {
             Order order = orderRepository.findById(orderId).orElse(null);
@@ -344,12 +428,6 @@ public class PaymentGatewayService {
 
         order.setOrderStatus(ORDER_PAYMENT_FAILED);
         orderRepository.save(order);
-    }
-
-    private void requireEnabled(boolean enabled, String label) {
-        if (!enabled) {
-            throw new APIException(label + " is not configured on this store yet");
-        }
     }
 
     private boolean amountMatches(Order order, Double paidAmount) {

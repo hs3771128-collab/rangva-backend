@@ -16,4 +16,6 @@ public class PaymentMethodsResponse {
     private boolean jazzcash;
     private boolean easypaisa;
     private boolean safepay;
+    /** True when the backend is running the dev test mode (no real money moves). */
+    private boolean testMode;
 }

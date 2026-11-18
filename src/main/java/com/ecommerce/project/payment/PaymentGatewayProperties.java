@@ -17,6 +17,15 @@ public class PaymentGatewayProperties {
     /** Frontend page the backend redirects to after a gateway callback. */
     private String frontendReturnUrl = "http://localhost:5173/order-confirm";
 
+    /** Frontend origin, used only by the development test gateway page. */
+    private String frontendBaseUrl = "http://localhost:5173";
+
+    /**
+     * Development only: lets the checkout exercise gateways that have no
+     * credentials yet. No real money moves; never enable this in production.
+     */
+    private boolean testMode = false;
+
     /** Public base URL of this backend; used to build gateway callback URLs. */
     private String backendBaseUrl = "http://localhost:8080";
 
@@ -38,6 +47,22 @@ public class PaymentGatewayProperties {
 
     public void setFrontendReturnUrl(String frontendReturnUrl) {
         this.frontendReturnUrl = frontendReturnUrl;
+    }
+
+    public String getFrontendBaseUrl() {
+        return frontendBaseUrl;
+    }
+
+    public void setFrontendBaseUrl(String frontendBaseUrl) {
+        this.frontendBaseUrl = frontendBaseUrl;
+    }
+
+    public boolean isTestMode() {
+        return testMode;
+    }
+
+    public void setTestMode(boolean testMode) {
+        this.testMode = testMode;
     }
 
     public String getBackendBaseUrl() {

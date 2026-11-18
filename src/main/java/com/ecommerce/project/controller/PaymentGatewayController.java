@@ -3,6 +3,7 @@ package com.ecommerce.project.controller;
 import com.ecommerce.project.payload.GatewayInitRequest;
 import com.ecommerce.project.payload.GatewayInitResponse;
 import com.ecommerce.project.payload.GatewayStatusResponse;
+import com.ecommerce.project.payload.MockPaymentRequest;
 import com.ecommerce.project.payload.PaymentMethodsResponse;
 import com.ecommerce.project.payload.SafepayVerifyRequest;
 import com.ecommerce.project.payment.PaymentGatewayService;
@@ -80,5 +81,12 @@ public class PaymentGatewayController {
     public GatewayStatusResponse verifySafepay(@Valid @RequestBody SafepayVerifyRequest request) {
         return paymentGatewayService.verifySafepay(
                 request.getTracker(), request.getOrderId(), authUtil.loggedInEmail());
+    }
+
+    /** Development test gateway: approve or fail a simulated payment. */
+    @PostMapping("/payments/mock/complete")
+    public GatewayStatusResponse completeMockPayment(@Valid @RequestBody MockPaymentRequest request) {
+        return paymentGatewayService.completeMockPayment(
+                request.getOrderId(), request.getGateway(), request.isSuccess(), authUtil.loggedInEmail());
     }
 }

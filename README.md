@@ -118,7 +118,25 @@ How the flow works:
 
 JazzCash callbacks are verified with `pp_SecureHash` (HMAC-SHA256 over the integrity salt and the sorted `pp_*` values). Easypaisa requests use `merchantHashedReq` (HMAC-MD5, Base64) and are matched on `storeId`, `orderRefNum` and amount. Safepay webhooks must carry `X-SFPY-SIGNATURE` = `Base64(HMAC-SHA256(raw body, SAFEPAY_WEBHOOK_SECRET))`; the tracker is then matched to the stored payment. Safepay payments are also re-checked server-to-server through `GET /order/v1/authorized` when the customer returns.
 
-> While developing on localhost, point `PAYMENTS_BACKEND_BASE_URL` at a tunnel (for example `ngrok http 8080`) and register the callback/webhook URLs in the gateway portals. In Safepay, register `https://<backend>/api/payments/safepay/webhook` for the *payment succeeded* and *payment failed* events. Safepay covers Visa and Mastercard; PayPak needs a PSP that supports that scheme (for example PayFast/Alfa).
+> While developing on localhost, point `PAYMENTS_BACKEND_BASE_URL` at a tunnel (for example `ngrok http 8080`) and register the callback/webhook URLs in the gateway portals. In Safepay, register `https://<backend>/api/payments/safepay/webhook` for the *payment succeeded* and *payment failed* events. Safepay's checkout shows Visa, Mastercard and PayPak; the scheme has to be enabled for your merchant account (ask Safepay support), otherwise only the international cards appear.
+
+#### Test mode (no credentials needed)
+
+Merchant accounts take time to approve, but the checkout flow can already be exercised end to end with **test mode**:
+
+```properties
+PAYMENTS_TEST_MODE=true          # development only, never in production
+PAYMENTS_FRONTEND_BASE_URL=http://localhost:5173
+```
+
+With test mode on:
+
+- every gateway is reported as available (`GET /api/public/payments/methods` returns `testMode: true`),
+- `POST /api/payments/{gateway}/init` returns `http://localhost:5173/mock-gateway?...` instead of calling the real gateway,
+- the storefront's test page posts to `POST /api/payments/mock/complete` with `{orderId, gateway, success}` and the order moves to `CONFIRMED`/`PAID` or `PAYMENT_FAILED` exactly like a real callback,
+- **no real money moves**. `PAYMENTS_TEST_MODE` cannot be left on by accident: the app refuses to start when it is combined with a `prod`/`production` profile.
+
+To accept real payments, set the gateway's `*_ENABLED` flag and its credentials, then remove `PAYMENTS_TEST_MODE`.
 
 ## Domain model
 
@@ -188,11 +206,12 @@ Prices are stored as plain PKR numbers. Delivery rules are applied server-side a
 | --- | --- | --- |
 | POST | `/api/order/users/payments/{paymentMethod}` | Place order. `CASH_ON_DELIVERY`, `JAZZCASH`, `EASYPAISA`, `SAFEPAY`, `BANK_TRANSFER` |
 | GET | `/api/order/users/{orderId}` | A customer's own order (used after a gateway redirect) |
-| POST | `/api/payments/{gateway}/init` | Start/retry an online payment, returns the signed gateway form |
+| POST | `/api/payments/{gateway}/init` | Start/retry an online payment; returns the signed form or checkout URL |
 | POST | `/api/payments/jazzcash/callback` | JazzCash result (signature-verified, public) |
 | POST | `/api/payments/easypaisa/callback` | Easypaisa result (verified, public) |
 | POST | `/api/payments/safepay/webhook` | Safepay webhook (`X-SFPY-SIGNATURE` verified, public) |
 | POST | `/api/payments/safepay/verify` | Re-checks a Safepay tracker after the redirect (authenticated) |
+| POST | `/api/payments/mock/complete` | Test mode only: approves/fails a simulated payment (authenticated) |
 | GET | `/api/public/payments/methods` | Which gateways are configured |
 | GET | `/api/admin/orders` | Admin order list |
 | GET | `/api/seller/orders` | Seller order list |
