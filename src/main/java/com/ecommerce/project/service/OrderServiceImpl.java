@@ -62,7 +62,7 @@ public class OrderServiceImpl implements OrderService {
 
     /** Payment methods the storefront is allowed to submit. */
     private static final Set<String> SUPPORTED_PAYMENT_METHODS = Set.of(
-            "CASH_ON_DELIVERY", "COD", "JAZZCASH", "EASYPAISA", "BANK_TRANSFER");
+            "CASH_ON_DELIVERY", "COD", "JAZZCASH", "EASYPAISA", "SAFEPAY", "BANK_TRANSFER");
 
     @Override
     @Transactional

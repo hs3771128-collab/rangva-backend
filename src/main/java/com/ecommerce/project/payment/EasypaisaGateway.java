@@ -60,7 +60,7 @@ public class EasypaisaGateway {
                 sign(config.getStoreId(), amount, callbackUrl, orderRef, config.getHashKey()));
 
         return new GatewayInitResponse(NAME, config.effectiveCheckoutUrl(), fields,
-                order.getOrderId(), order.getTotalAmount());
+                order.getOrderId(), order.getTotalAmount(), orderRef);
     }
 
     /**

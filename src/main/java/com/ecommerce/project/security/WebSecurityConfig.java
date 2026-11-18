@@ -84,6 +84,7 @@ public class WebSecurityConfig {
                                 .requestMatchers("/api/public/**").permitAll()
                                 // Gateways POST the payment result here; each callback is signature-checked.
                                 .requestMatchers("/api/payments/*/callback").permitAll()
+                                .requestMatchers("/api/payments/*/webhook").permitAll()
                                 .requestMatchers("/swagger-ui/**").permitAll()
                                 .requestMatchers("/api/test/**").permitAll()
                                 .requestMatchers("/images/**").permitAll()

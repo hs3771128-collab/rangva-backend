@@ -15,4 +15,5 @@ public class PaymentMethodsResponse {
 
     private boolean jazzcash;
     private boolean easypaisa;
+    private boolean safepay;
 }

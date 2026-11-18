@@ -5,6 +5,7 @@ import com.ecommerce.project.exceptions.ResourceNotFoundException;
 import com.ecommerce.project.model.Order;
 import com.ecommerce.project.model.Payment;
 import com.ecommerce.project.payload.GatewayInitResponse;
+import com.ecommerce.project.payload.GatewayStatusResponse;
 import com.ecommerce.project.payload.PaymentMethodsResponse;
 import com.ecommerce.project.repository.OrderRepository;
 import com.ecommerce.project.repository.PaymentRepository;
@@ -36,24 +37,28 @@ public class PaymentGatewayService {
 
     private final JazzCashGateway jazzCashGateway;
     private final EasypaisaGateway easypaisaGateway;
+    private final SafepayGateway safepayGateway;
     private final PaymentGatewayProperties properties;
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
 
     public PaymentGatewayService(JazzCashGateway jazzCashGateway,
                                  EasypaisaGateway easypaisaGateway,
+                                 SafepayGateway safepayGateway,
                                  PaymentGatewayProperties properties,
                                  OrderRepository orderRepository,
                                  PaymentRepository paymentRepository) {
         this.jazzCashGateway = jazzCashGateway;
         this.easypaisaGateway = easypaisaGateway;
+        this.safepayGateway = safepayGateway;
         this.properties = properties;
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
     }
 
     public PaymentMethodsResponse availableMethods() {
-        return new PaymentMethodsResponse(jazzCashGateway.isEnabled(), easypaisaGateway.isEnabled());
+        return new PaymentMethodsResponse(jazzCashGateway.isEnabled(), easypaisaGateway.isEnabled(),
+                safepayGateway.isEnabled());
     }
 
     @Transactional
@@ -95,10 +100,17 @@ public class PaymentGatewayService {
                 payment.setPaymentMethod("EASYPAISA");
                 payment.setPgName(EasypaisaGateway.LABEL);
             }
+            case SafepayGateway.NAME -> {
+                requireEnabled(safepayGateway.isEnabled(), SafepayGateway.LABEL);
+                response = safepayGateway.init(order);
+                payment.setPaymentMethod("SAFEPAY");
+                payment.setPgName(SafepayGateway.LABEL);
+            }
             default -> throw new APIException("Unknown payment gateway: " + gateway);
         }
 
         payment.setPgStatus(PAYMENT_PENDING);
+        payment.setPgPaymentId(response.getReference());
         payment.setPgResponseMessage("Customer redirected to " + payment.getPgName());
         paymentRepository.save(payment);
 
@@ -184,6 +196,117 @@ public class PaymentGatewayService {
         return redirect(orderId, false, EasypaisaGateway.NAME);
     }
 
+    /**
+     * Handles Safepay's webhook. Returns {@code false} only when the request is
+     * not an authentic Safepay call, so the controller can answer with 401.
+     */
+    @Transactional
+    public boolean handleSafepayWebhook(String rawBody, String signature) {
+        if (!safepayGateway.isEnabled()) {
+            log.warn("Safepay webhook received but the gateway is not configured");
+            return false;
+        }
+        if (!safepayGateway.verifyWebhookSignature(rawBody, signature)) {
+            log.warn("Safepay webhook rejected: invalid X-SFPY-SIGNATURE");
+            return false;
+        }
+
+        SafepayGateway.WebhookEvent event;
+        try {
+            event = safepayGateway.parseWebhook(rawBody);
+        } catch (Exception e) {
+            // Authentic but unreadable: acknowledge so Safepay does not retry forever.
+            log.warn("Safepay webhook payload could not be parsed: {}", e.getMessage());
+            return true;
+        }
+
+        Order order = findSafepayOrder(event.orderId(), event.tracker());
+        if (order == null) {
+            log.warn("Safepay webhook for unknown order (orderId={}, tracker={})",
+                    event.orderId(), event.tracker());
+            return true;
+        }
+
+        if (event.amount() != null && !amountMatches(order, event.amount())) {
+            log.warn("Safepay amount mismatch for order {}: expected {} got {}",
+                    order.getOrderId(), order.getTotalAmount(), event.amount());
+            markFailed(order, "Amount mismatch", SafepayGateway.LABEL);
+            return true;
+        }
+
+        if (event.paid()) {
+            markPaid(order, safepayReference(order, event.tracker()),
+                    event.message(), SafepayGateway.LABEL);
+        } else if (event.failed()) {
+            markFailed(order, event.message(), SafepayGateway.LABEL);
+        } else {
+            log.info("Safepay webhook for order {} has no final state yet ({})",
+                    order.getOrderId(), event.status());
+        }
+        return true;
+    }
+
+    /**
+     * Re-checks a Safepay tracker after the customer is redirected back. The
+     * webhook is authoritative, but the redirect usually arrives first.
+     */
+    @Transactional
+    public GatewayStatusResponse verifySafepay(String tracker, Long fallbackOrderId, String email) {
+        if (!safepayGateway.isEnabled()) {
+            throw new APIException(SafepayGateway.LABEL + " is not configured on this store yet");
+        }
+
+        Order order = findSafepayOrder(fallbackOrderId, tracker);
+        if (order == null) {
+            throw new ResourceNotFoundException("Order", "tracker", tracker);
+        }
+        if (!order.getEmail().equalsIgnoreCase(email)) {
+            throw new APIException("This order does not belong to your account");
+        }
+
+        Payment payment = order.getPayment();
+        if (payment != null && PAYMENT_PAID.equalsIgnoreCase(payment.getPgStatus())) {
+            return new GatewayStatusResponse(order.getOrderId(), PAYMENT_PAID, true,
+                    "Payment already received");
+        }
+
+        SafepayGateway.PaymentStatus status = safepayGateway.checkStatus(tracker);
+        if (status.paid()) {
+            markPaid(order, safepayReference(order, tracker), status.message(), SafepayGateway.LABEL);
+            return new GatewayStatusResponse(order.getOrderId(), PAYMENT_PAID, true, status.message());
+        }
+        if (status.failed()) {
+            markFailed(order, status.message(), SafepayGateway.LABEL);
+            return new GatewayStatusResponse(order.getOrderId(), PAYMENT_FAILED, false, status.message());
+        }
+
+        String current = payment != null && payment.getPgStatus() != null
+                ? payment.getPgStatus()
+                : PAYMENT_PENDING;
+        return new GatewayStatusResponse(order.getOrderId(), current, false, status.message());
+    }
+
+    private Order findSafepayOrder(Long orderId, String tracker) {
+        if (orderId != null) {
+            Order order = orderRepository.findById(orderId).orElse(null);
+            if (order != null) {
+                return order;
+            }
+        }
+        if (PaymentGatewayProperties.hasText(tracker)) {
+            Payment payment = paymentRepository.findFirstByPgPaymentId(tracker).orElse(null);
+            if (payment != null) {
+                return payment.getOrder();
+            }
+        }
+        return null;
+    }
+
+    private String safepayReference(Order order, String tracker) {
+        String stored = order.getPayment() != null ? order.getPayment().getPgPaymentId() : null;
+        return firstNonBlank(tracker, stored, "SFPY-" + order.getOrderId());
+    }
+
     private void markPaid(Order order, String transactionId, String message, String gatewayName) {
         Payment payment = order.getPayment();
         if (payment != null && PAYMENT_PAID.equalsIgnoreCase(payment.getPgStatus())) {
@@ -255,6 +378,15 @@ public class PaymentGatewayService {
         }
         String first = orderRef.split("-")[0].trim();
         return first.matches("\\d+") ? Long.valueOf(first) : null;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (PaymentGatewayProperties.hasText(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private Long parseLong(String value) {

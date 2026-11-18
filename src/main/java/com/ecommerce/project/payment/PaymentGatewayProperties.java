@@ -3,7 +3,8 @@ package com.ecommerce.project.payment;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Configuration for the Pakistani payment gateways (JazzCash + Easypaisa).
+ * Configuration for the Pakistani payment gateways (JazzCash, Easypaisa and
+ * Safepay cards).
  *
  * <p>Every merchant credential is read from an environment variable (see
  * {@code application.properties}) so no secret is ever committed to the
@@ -21,6 +22,7 @@ public class PaymentGatewayProperties {
 
     private final JazzCash jazzcash = new JazzCash();
     private final Easypaisa easypaisa = new Easypaisa();
+    private final Safepay safepay = new Safepay();
 
     public String callbackUrl(String gateway) {
         String base = backendBaseUrl == null ? "" : backendBaseUrl.trim();
@@ -52,6 +54,10 @@ public class PaymentGatewayProperties {
 
     public Easypaisa getEasypaisa() {
         return easypaisa;
+    }
+
+    public Safepay getSafepay() {
+        return safepay;
     }
 
     public static boolean hasText(String value) {
@@ -235,6 +241,119 @@ public class PaymentGatewayProperties {
 
         public void setEmail(String email) {
             this.email = email;
+        }
+    }
+
+    /**
+     * Safepay card checkout (Visa / Mastercard) settings.
+     *
+     * <p>Safepay uses an API key + merchant secret pair to create a payment and
+     * a separate webhook secret to sign callbacks, so card data never touches
+     * this backend.</p>
+     */
+    public static class Safepay {
+
+        private boolean enabled = false;
+        private boolean sandbox = true;
+        private String apiKey = "";
+        private String secret = "";
+        private String webhookSecret = "";
+        private String apiBase = "";
+        private String checkoutBase = "";
+
+        public boolean isConfigured() {
+            return enabled && hasText(apiKey) && hasText(secret);
+        }
+
+        /** Webhooks can only be trusted when a signing secret is configured. */
+        public boolean isWebhookConfigured() {
+            return hasText(webhookSecret);
+        }
+
+        public String effectiveApiBase() {
+            if (hasText(apiBase)) {
+                return trimTrailingSlash(apiBase);
+            }
+            return sandbox
+                    ? "https://sandbox.api.getsafepay.com"
+                    : "https://api.getsafepay.com";
+        }
+
+        public String effectiveCheckoutBase() {
+            if (hasText(checkoutBase)) {
+                return trimTrailingSlash(checkoutBase);
+            }
+            return sandbox
+                    ? "https://sandbox.getsafepay.com/checkout/pay"
+                    : "https://getsafepay.com/checkout/pay";
+        }
+
+        public String environment() {
+            return sandbox ? "sandbox" : "production";
+        }
+
+        private static String trimTrailingSlash(String value) {
+            String result = value == null ? "" : value.trim();
+            while (result.endsWith("/")) {
+                result = result.substring(0, result.length() - 1);
+            }
+            return result;
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public boolean isSandbox() {
+            return sandbox;
+        }
+
+        public void setSandbox(boolean sandbox) {
+            this.sandbox = sandbox;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getSecret() {
+            return secret;
+        }
+
+        public void setSecret(String secret) {
+            this.secret = secret;
+        }
+
+        public String getWebhookSecret() {
+            return webhookSecret;
+        }
+
+        public void setWebhookSecret(String webhookSecret) {
+            this.webhookSecret = webhookSecret;
+        }
+
+        public String getApiBase() {
+            return apiBase;
+        }
+
+        public void setApiBase(String apiBase) {
+            this.apiBase = apiBase;
+        }
+
+        public String getCheckoutBase() {
+            return checkoutBase;
+        }
+
+        public void setCheckoutBase(String checkoutBase) {
+            this.checkoutBase = checkoutBase;
         }
     }
 }

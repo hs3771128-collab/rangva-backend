@@ -72,7 +72,7 @@ public class JazzCashGateway {
         fields.put("pp_SecureHash", secureHash(config.getIntegritySalt(), fields));
 
         return new GatewayInitResponse(NAME, config.effectiveCheckoutUrl(), fields,
-                order.getOrderId(), order.getTotalAmount());
+                order.getOrderId(), order.getTotalAmount(), txnRef);
     }
 
     /**

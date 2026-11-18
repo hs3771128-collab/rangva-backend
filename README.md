@@ -76,9 +76,9 @@ The demo catalogue (when enabled) creates:
 
 Default accounts: `admin` / `adminPass`, plus `user1` / `password1` and `seller1` / `password2`.
 
-### 4. Payment gateways (JazzCash + Easypaisa)
+### 4. Payment gateways (JazzCash + Easypaisa + Safepay cards)
 
-Online payments use the **hosted checkout** pages of JazzCash and Easypaisa: the store never receives card or wallet credentials. Credentials are read from environment variables, so nothing secret is committed to git. A gateway is only offered at checkout when it is enabled *and* its credentials are set.
+Online payments use **hosted checkout** pages: the store never receives card or wallet credentials. Credentials are read from environment variables, so nothing secret is committed to git. A gateway is only offered at checkout when it is enabled *and* its credentials are set.
 
 ```properties
 # JazzCash merchant form
@@ -96,6 +96,13 @@ EASYPAISA_HASH_KEY=...
 EASYPAISA_PAYMENT_METHOD=MA     # MA (mobile account), OTC, CC
 EASYPAISA_EMAIL=...
 
+# Safepay cards (Visa / Mastercard)
+SAFEPAY_ENABLED=true
+SAFEPAY_SANDBOX=false           # true while testing
+SAFEPAY_API_KEY=...
+SAFEPAY_SECRET=...
+SAFEPAY_WEBHOOK_SECRET=...      # signs the X-SFPY-SIGNATURE header
+
 # Gateway callbacks must reach this backend over the public internet
 PAYMENTS_BACKEND_BASE_URL=https://api.your-domain.pk
 PAYMENTS_FRONTEND_RETURN_URL=https://your-domain.pk/order-confirm
@@ -104,13 +111,14 @@ PAYMENTS_FRONTEND_RETURN_URL=https://your-domain.pk/order-confirm
 How the flow works:
 
 1. The customer places an order. It is saved as `PENDING_PAYMENT` with payment `PENDING` — **nothing is marked paid yet**.
-2. `POST /api/payments/{jazzcash|easypaisa}/init` returns the gateway URL plus a **signed** form; the storefront auto-submits it.
-3. The gateway redirects the customer to its payment page.
-4. The gateway POSTs the result to `/api/payments/{gateway}/callback`.
+2. `POST /api/payments/{jazzcash|easypaisa|safepay}/init` starts the payment. JazzCash/Easypaisa return a **signed form** the storefront auto-submits; Safepay returns a checkout URL (a tracker is stored on the payment).
+3. The customer pays on the gateway's own page.
+4. The result comes back through `/api/payments/{gateway}/callback` (JazzCash, Easypaisa) or through Safepay's webhook plus the `verify` call the confirmation page makes after the redirect.
+5. Only after the signature, amount and order checks pass does the order move to `CONFIRMED` / payment `PAID`. A failed or tampered result leaves it unpaid (`PAYMENT_FAILED`) so the customer can retry from the confirmation page.
 
-JazzCash callbacks are verified with `pp_SecureHash` (HMAC-SHA256 over the integrity salt and the sorted `pp_*` values). Easypaisa requests are signed with `merchantHashedReq` (HMAC-MD5, Base64) and the callback is matched on `storeId`, `orderRefNum` and amount. Only after those checks does the order move to `CONFIRMED` / payment `PAID`; a failed or tampered callback leaves it unpaid (`PAYMENT_FAILED`) so the customer can retry from the confirmation page.
+JazzCash callbacks are verified with `pp_SecureHash` (HMAC-SHA256 over the integrity salt and the sorted `pp_*` values). Easypaisa requests use `merchantHashedReq` (HMAC-MD5, Base64) and are matched on `storeId`, `orderRefNum` and amount. Safepay webhooks must carry `X-SFPY-SIGNATURE` = `Base64(HMAC-SHA256(raw body, SAFEPAY_WEBHOOK_SECRET))`; the tracker is then matched to the stored payment. Safepay payments are also re-checked server-to-server through `GET /order/v1/authorized` when the customer returns.
 
-> While developing on localhost, point `PAYMENTS_BACKEND_BASE_URL` at a tunnel (for example `ngrok http 8080`) and register that callback URL in the JazzCash/Easypaisa merchant portal.
+> While developing on localhost, point `PAYMENTS_BACKEND_BASE_URL` at a tunnel (for example `ngrok http 8080`) and register the callback/webhook URLs in the gateway portals. In Safepay, register `https://<backend>/api/payments/safepay/webhook` for the *payment succeeded* and *payment failed* events. Safepay covers Visa and Mastercard; PayPak needs a PSP that supports that scheme (for example PayFast/Alfa).
 
 ## Domain model
 
@@ -178,11 +186,13 @@ Prices are stored as plain PKR numbers. Delivery rules are applied server-side a
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/order/users/payments/{paymentMethod}` | Place order. `CASH_ON_DELIVERY`, `JAZZCASH`, `EASYPAISA`, `BANK_TRANSFER` |
+| POST | `/api/order/users/payments/{paymentMethod}` | Place order. `CASH_ON_DELIVERY`, `JAZZCASH`, `EASYPAISA`, `SAFEPAY`, `BANK_TRANSFER` |
 | GET | `/api/order/users/{orderId}` | A customer's own order (used after a gateway redirect) |
 | POST | `/api/payments/{gateway}/init` | Start/retry an online payment, returns the signed gateway form |
 | POST | `/api/payments/jazzcash/callback` | JazzCash result (signature-verified, public) |
 | POST | `/api/payments/easypaisa/callback` | Easypaisa result (verified, public) |
+| POST | `/api/payments/safepay/webhook` | Safepay webhook (`X-SFPY-SIGNATURE` verified, public) |
+| POST | `/api/payments/safepay/verify` | Re-checks a Safepay tracker after the redirect (authenticated) |
 | GET | `/api/public/payments/methods` | Which gateways are configured |
 | GET | `/api/admin/orders` | Admin order list |
 | GET | `/api/seller/orders` | Seller order list |

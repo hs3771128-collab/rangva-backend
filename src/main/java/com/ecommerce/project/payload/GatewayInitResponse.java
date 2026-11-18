@@ -20,4 +20,6 @@ public class GatewayInitResponse {
     private Map<String, String> fields;
     private Long orderId;
     private Double amount;
+    /** Gateway-side reference (JazzCash txn ref, Easypaisa order ref, Safepay tracker). */
+    private String reference;
 }
