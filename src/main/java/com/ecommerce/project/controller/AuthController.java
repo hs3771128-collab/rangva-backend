@@ -58,15 +58,4 @@ public class AuthController {
                 .body(new MessageResponse("You've been singed out!"));
     }
 
-    @GetMapping("/sellers")
-    public ResponseEntity<?> getAllSellers(
-            @RequestParam(name = "pageNumber", defaultValue = AppConstants.PAGE_NUMBER, required = false) Integer pageNumber) {
-
-        Sort sortByAndOrder = Sort.by(AppConstants.SORT_USERS_BY).descending();
-        Pageable pageDetails = PageRequest.of(pageNumber ,
-                Integer.parseInt(AppConstants.PAGE_SIZE), sortByAndOrder);
-
-        return ResponseEntity.ok(authService.getAllSellers(pageDetails));
-    }
-
 }

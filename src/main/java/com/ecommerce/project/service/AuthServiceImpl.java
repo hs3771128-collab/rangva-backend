@@ -81,6 +81,21 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public ResponseEntity<MessageResponse> register(SignupRequest signUpRequest) {
+        // Public signup always creates a plain customer. The role field in the
+        // request is ignored on purpose: accepting it would let anyone register
+        // themselves as an admin or a seller.
+        return createUser(signUpRequest, AppRole.ROLE_USER, "User registered successfully!");
+    }
+
+    @Override
+    public ResponseEntity<MessageResponse> registerSeller(SignupRequest signUpRequest) {
+        // Only reachable through /api/admin/sellers (ROLE_ADMIN).
+        return createUser(signUpRequest, AppRole.ROLE_SELLER, "Seller registered successfully!");
+    }
+
+    private ResponseEntity<MessageResponse> createUser(SignupRequest signUpRequest,
+                                                       AppRole assignedRole,
+                                                       String successMessage) {
         if (userRepository.existsByUserName(signUpRequest.getUsername())) {
             return ResponseEntity.badRequest().body(new MessageResponse("Error: Username is already taken!"));
         }
@@ -94,39 +109,14 @@ public class AuthServiceImpl implements AuthService {
                 signUpRequest.getEmail(),
                 encoder.encode(signUpRequest.getPassword()));
 
-        Set<String> strRoles = signUpRequest.getRole();
+        Role role = roleRepository.findByRoleName(assignedRole)
+                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
         Set<Role> roles = new HashSet<>();
-
-        if (strRoles == null) {
-            Role userRole = roleRepository.findByRoleName(AppRole.ROLE_USER)
-                    .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-            roles.add(userRole);
-        } else {
-            strRoles.forEach(role -> {
-                switch (role) {
-                    case "admin":
-                        Role adminRole = roleRepository.findByRoleName(AppRole.ROLE_ADMIN)
-                                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                        roles.add(adminRole);
-
-                        break;
-                    case "seller":
-                        Role modRole = roleRepository.findByRoleName(AppRole.ROLE_SELLER)
-                                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                        roles.add(modRole);
-
-                        break;
-                    default:
-                        Role userRole = roleRepository.findByRoleName(AppRole.ROLE_USER)
-                                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                        roles.add(userRole);
-                }
-            });
-        }
+        roles.add(role);
 
         user.setRoles(roles);
         userRepository.save(user);
-        return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+        return ResponseEntity.ok(new MessageResponse(successMessage));
     }
 
     @Override

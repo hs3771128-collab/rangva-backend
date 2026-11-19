@@ -16,6 +16,8 @@ public interface AuthService {
 
     ResponseEntity<MessageResponse> register(SignupRequest signUpRequest);
 
+    ResponseEntity<MessageResponse> registerSeller(SignupRequest signUpRequest);
+
     UserInfoResponse getCurrentUserDetails(Authentication authentication);
 
     ResponseCookie logoutUser();
