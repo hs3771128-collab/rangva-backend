@@ -237,3 +237,32 @@ https://rangva.pk,https://www.rangva.pk,https://rangva.netlify.app
 ```
 
 Free domain chahiye to `*.netlify.app` hi rakhein — woh permanent free hai.
+
+---
+
+## 10. Foran public link (bina koi signup — temporary)
+
+Agar abhi, isi waqt, kisi ko link dena ho to Cloudflare quick tunnel use karein. Is me koi account nahi banta aur URL `https://<random>.trycloudflare.com` hota hai.
+
+Setup (repo ke bahar, sirf machine par):
+
+```
+E:\bacha project\_deploy\live-tunnel.ps1      # backend + bridge + tunnel
+E:\bacha project\_deploy\live\server.js       # storefront + /api ek hi origin par
+```
+
+Chalane ke liye:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "E:\bacha project\_deploy\live-tunnel.ps1"
+```
+
+Yeh script backend (8080) start karta hai, frontend ko **same-origin mode** me build karta hai (`VITE_BACK_END_URL=` khaali → `/api` relative), phir Node bridge (4173) aur tunnel chalata hai.
+
+| Faida | Nuqsan |
+| --- | --- |
+| 1 minute me live, koi signup nahi | PC band/sleep hua to site band |
+| Same origin → CORS/cookie ka masla nahi | Har restart par URL badal jata hai |
+| Asli DB ka data | Payment gateway callbacks ke liye theek nahi |
+
+Permanent solution ke liye section 1–4 follow karein (Neon + Render + Netlify).
