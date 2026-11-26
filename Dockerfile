@@ -21,7 +21,7 @@ COPY --from=build /build/app.jar app.jar
 # Product images are served from local disk (WebMvcConfig maps /images/**).
 COPY images ./images
 
-RUN chown -R app:app /app
+RUN chown -R app:app /app && chmod -R 777 /app/images
 USER app
 
 EXPOSE 8080
