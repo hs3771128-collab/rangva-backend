@@ -40,6 +40,55 @@ public class MyGlobalExceptions {
         APIResponse apiResponse = new APIResponse(message, false);
         return new ResponseEntity<>(apiResponse, HttpStatus.BAD_REQUEST);
     }
+
+    /**
+     * Hibernate validates entities on persist/update as well. Without this
+     * handler that failure escapes to the /error page and the client sees a
+     * generic 500 (or a 401 before /error was permitted), instead of a clear
+     * message about which field is wrong.
+     */
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<Map<String, String>> myConstraintViolationException(
+            jakarta.validation.ConstraintViolationException e) {
+        return new ResponseEntity<>(violationMessages(e), HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Hibernate validates on flush, and that failure is wrapped in a
+     * TransactionSystemException ("Could not commit JPA transaction"). Unwrap it
+     * so the client still gets "description: Product description must contain
+     * atleast 6 characters" instead of a generic 500.
+     */
+    @ExceptionHandler(org.springframework.transaction.TransactionSystemException.class)
+    public ResponseEntity<Map<String, String>> myTransactionSystemException(
+            org.springframework.transaction.TransactionSystemException e) {
+        Throwable cause = e.getCause();
+        while (cause != null && !(cause instanceof jakarta.validation.ConstraintViolationException)) {
+            cause = cause.getCause();
+        }
+        jakarta.validation.ConstraintViolationException violation =
+                (jakarta.validation.ConstraintViolationException) cause;
+        if (violation == null) {
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Product save nahi ho saka. Data check karein.");
+            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+        }
+        return new ResponseEntity<>(violationMessages(violation), HttpStatus.BAD_REQUEST);
+    }
+
+    private Map<String, String> violationMessages(jakarta.validation.ConstraintViolationException e) {
+        Map<String, String> response = new HashMap<>();
+        e.getConstraintViolations().forEach(violation -> {
+            String field = violation.getPropertyPath() != null
+                    ? violation.getPropertyPath().toString()
+                    : "error";
+            response.put(field, violation.getMessage());
+        });
+        if (response.isEmpty()) {
+            response.put("error", "Validation failed");
+        }
+        return response;
+    }
 }
 
 // Here Making Error message more user friendly

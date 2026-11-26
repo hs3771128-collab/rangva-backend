@@ -50,8 +50,12 @@ public class CartController {
     public ResponseEntity<CartDTO> getCartById() {
         String emailId =authUtil.loggedInEmail();//Getting the email from the users session
         Cart cart = cartRepository.findCartByEmail(emailId);//Getting the cart of the user form the database with the help of the fetched emailId
-        Long cartId =cart.getCartId();//And then we re getting the cartId from the cart 
-        CartDTO cartDTO = cartService.getCart(emailId, cartId);//Then we're making use of both for pass to the serviceLayer
+        if (cart == null) {
+            // A brand-new account has no cart until its first product is added.
+            // Return an empty cart instead of a 500 so sign-in stays clean.
+            return new ResponseEntity<>(new CartDTO(), HttpStatus.OK);
+        }
+        CartDTO cartDTO = cartService.getCart(emailId, cart.getCartId());//Then we're making use of both for pass to the serviceLayer
         return new ResponseEntity<CartDTO>(cartDTO, HttpStatus.OK) ;
     }
 

@@ -21,4 +21,10 @@ public class AnalyticsController {
         AnalyticsResponse response = analyticsService.getAnalyticsData();
         return new ResponseEntity<AnalyticsResponse>(response, HttpStatus.OK);
     }
+
+    /** Seller dashboard numbers (only the seller's own products/orders). */
+    @GetMapping("/seller/app/analytics")
+    public ResponseEntity<com.ecommerce.project.payload.SellerAnalyticsResponse> getSellerAnalytics() {
+        return new ResponseEntity<>(analyticsService.getSellerAnalyticsData(), HttpStatus.OK);
+    }
 }

@@ -407,21 +407,11 @@ public class OrderServiceImpl implements OrderService {
 
         User seller = authUtil.loggedInUser();
 
-        Page<Order> pageOrders = orderRepository.findAll(pageDetails);
+        // Proper server-side pagination: only orders that contain this seller's
+        // products are counted, so totals/pages are correct.
+        Page<Order> pageOrders = orderRepository.findBySeller(seller, pageDetails);
 
-        List<Order> sellerOrders = pageOrders.getContent().stream()
-                .filter(order -> order.getOrderItems().stream()
-                        .anyMatch(orderItem -> {
-                            var product = orderItem.getProduct();
-                            if (product == null || product.getUser() == null) {  //So if the product is not associated with any seller then in that case don't take that product and just skip it.
-                                return false;
-                            }
-                            return product.getUser().getUserId().equals(
-                                    seller.getUserId());
-                        }))
-                .toList();
-
-        List<OrderDTO> orderDTOs = sellerOrders.stream()
+        List<OrderDTO> orderDTOs = pageOrders.getContent().stream()
                 .map(order -> modelMapper.map(order, OrderDTO.class))
                 .toList();
         OrderResponse orderResponse = new OrderResponse();
@@ -432,5 +422,30 @@ public class OrderServiceImpl implements OrderService {
         orderResponse.setTotalPages(pageOrders.getTotalPages());
         orderResponse.setLastPage(pageOrders.isLast());
         return orderResponse;
+    }
+
+    /**
+     * A seller may only change the status of an order that contains one of their
+     * own products. Admins (who use /api/admin/orders/{id}/status) are not routed
+     * through this check.
+     */
+    @Override
+    public OrderDTO updateOrderForSeller(Long orderId, String status) {
+        User seller = authUtil.loggedInUser();
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order", "orderId", orderId));
+
+        boolean ownsItem = order.getOrderItems().stream()
+                .anyMatch(item -> item.getProduct() != null
+                        && item.getProduct().getUser() != null
+                        && item.getProduct().getUser().getUserId().equals(seller.getUserId()));
+
+        if (!ownsItem) {
+            throw new APIException("Yeh order aap ke products ka nahi hai.");
+        }
+
+        order.setOrderStatus(status);
+        orderRepository.save(order);
+        return modelMapper.map(order, OrderDTO.class);
     }
 }

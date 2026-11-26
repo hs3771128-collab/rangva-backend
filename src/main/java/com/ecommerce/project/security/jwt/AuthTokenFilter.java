@@ -63,15 +63,13 @@ public class AuthTokenFilter extends OncePerRequestFilter {
 //    }
 
     private String parseJwt(HttpServletRequest request) {
-        String jwtFromCookies = jwtUtils.getJwtFromCookies(request);
-        if (jwtFromCookies != null) {
-            return jwtFromCookies;
-        }
+        // Header first: on cross-domain deployments a stale cookie (e.g. an old
+        // token for another host) must never hide a valid Bearer token.
         String jwtFromHeader = jwtUtils.getJwtFromHeader(request);
         if (jwtFromHeader != null) {
             return jwtFromHeader;
         }
-        return null;
+        return jwtUtils.getJwtFromCookies(request);
     }
 }
 

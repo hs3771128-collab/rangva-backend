@@ -100,6 +100,9 @@ public class WebSecurityConfig {
                                 .requestMatchers("/api/payments/*/webhook").permitAll()
                                 .requestMatchers("/swagger-ui/**").permitAll()
                                 .requestMatchers("/api/test/**").permitAll()
+                                // Error dispatch must stay open, otherwise any server-side
+                                // error is reported as a misleading 401 from /error.
+                                .requestMatchers("/error").permitAll()
                                 .requestMatchers("/images/**").permitAll()
                                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                                 .anyRequest().authenticated()

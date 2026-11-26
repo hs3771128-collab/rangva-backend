@@ -13,9 +13,11 @@ import com.ecommerce.project.payload.ProductResponse;
 import com.ecommerce.project.payload.ProductVariantDTO;
 import com.ecommerce.project.repository.CartRepository;
 import com.ecommerce.project.repository.CategoryRepository;
+import com.ecommerce.project.repository.OrderItemRepository;
 import com.ecommerce.project.repository.ProductRepository;
 import com.ecommerce.project.repository.ProductVariantRepository;
 import com.ecommerce.project.repository.ReviewRepository;
+import com.ecommerce.project.repository.WishlistItemRepository;
 import com.ecommerce.project.util.AuthUtil;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +56,12 @@ public class ProductServiceImpl implements ProductService {
 
     @Autowired
     private ReviewRepository reviewRepository;
+
+    @Autowired
+    private WishlistItemRepository wishlistItemRepository;
+
+    @Autowired
+    private OrderItemRepository orderItemRepository;
 
     @Autowired
     private ProductMapper productMapper;
@@ -306,14 +314,27 @@ public class ProductServiceImpl implements ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", "productId", productId));
 
+        // Order history must keep pointing at the product row, and sellers should
+        // not be able to erase evidence of past sales.
+        if (orderItemRepository.existsByProduct_ProductId(productId)) {
+            throw new APIException("Yeh product delete nahi ho sakta kyunke is ke orders maujood hain. "
+                    + "Store se hatane ke liye stock 0 kar dein.");
+        }
+
         List<Cart> carts = cartRepository.findCartsByProductId(productId);
         carts.forEach(cart -> cartService.deleteProductFromCart(cart.getCartId(), productId));
 
         ProductDTO dto = productMapper.toDTO(product);
 
+        // The cart-item rows were removed with bulk queries, so the eagerly
+        // loaded collection on the product still holds stale entities. Clear it
+        // before the flush, otherwise Product's cascade tries to re-persist them.
+        product.getProducts().clear();
+
+        wishlistItemRepository.deleteByProduct_ProductId(productId);
         reviewRepository.deleteByProduct_ProductId(productId);
         productVariantRepository.deleteByProductId(productId);
-        productRepository.delete(product);
+        productRepository.deleteProductRow(productId);
 
         return dto;
     }
@@ -352,5 +373,21 @@ public class ProductServiceImpl implements ProductService {
         User user = authUtil.loggedInUser();
         Page<Product> pageProducts = productRepository.findByUser(user, pageDetails);
         return toResponse(pageProducts);
+    }
+
+    /**
+     * Guards the /api/seller/** product routes: a seller can only touch products
+     * they own (admins use the /api/admin/** routes instead).
+     */
+    @Override
+    public void assertSellerOwnsProduct(Long productId) {
+        User seller = authUtil.loggedInUser();
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product", "productId", productId));
+
+        if (product.getUser() == null || product.getUser().getUserId() == null
+                || !product.getUser().getUserId().equals(seller.getUserId())) {
+            throw new APIException("Yeh product aap ke account ka nahi hai.");
+        }
     }
 }
