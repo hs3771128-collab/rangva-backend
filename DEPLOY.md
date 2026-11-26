@@ -154,6 +154,11 @@ Ab Netlify URL khol kar test karein:
 2. Signup/login ho raha hai?
 3. Cart → checkout → address → payment → review → place order?
 4. Footer → **Track my order** se tracking chal rahi hai?
+5. Admin panel → **Sellers** se ek seller account banayein, phir us se login karein —
+   woh seedha `/seller` dashboard par jaye (sirf apne products, orders aur revenue).
+6. Seller se ek product add karein, phir `/seller/products` aur `/seller/orders` check karein.
+7. Kisi doosre seller ka product/order update karne ki koshish par saaf error aana chahiye
+   (ownership guard).
 
 ---
 
