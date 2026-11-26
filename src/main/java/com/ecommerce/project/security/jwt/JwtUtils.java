@@ -17,6 +17,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.WebUtils;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.Key;
 import java.util.Date;
 
@@ -29,6 +32,8 @@ public class JwtUtils {
 
     @Value("${spring.app.jwtSecret}")
     private String jwtSecret;
+
+    private volatile SecretKey cachedKey;
 
     @Value("${spring.app.jwtExpirationMs}")
     private int jwtExpirationMs;
@@ -109,11 +114,54 @@ public class JwtUtils {
                 .build().parseSignedClaims(token)
                 .getPayload().getSubject();
     }
-    //Generate Signing Key
+    //Generate Signing Key. The key is derived once and cached so every request
+    //uses the same key even when the configured secret is blank.
     public Key key() {
-        return Keys.hmacShaKeyFor(
-                Decoders.BASE64.decode(jwtSecret)
-        );
+        SecretKey key = cachedKey;
+        if (key == null) {
+            synchronized (this) {
+                key = cachedKey;
+                if (key == null) {
+                    key = buildKey(jwtSecret);
+                    cachedKey = key;
+                }
+            }
+        }
+        return key;
+    }
+
+    /**
+     * Accepts a Base64 secret (the original format) or any long random string.
+     * An empty secret produces a random per-startup key, which keeps local dev
+     * working without shipping a known secret in git. Production must set
+     * SPRING_APP_JWTSECRET.
+     */
+    private static SecretKey buildKey(String secret) {
+        if (secret == null || secret.isBlank()) {
+            logger.warn("SPRING_APP_JWTSECRET is not set - using a random JWT key for this run. " +
+                    "Tokens will be invalid after a restart.");
+            return Jwts.SIG.HS256.key().build();
+        }
+        byte[] bytes = null;
+        try {
+            byte[] decoded = Decoders.BASE64.decode(secret);
+            if (decoded.length >= 32) {
+                bytes = decoded;
+            }
+        } catch (RuntimeException ignored) {
+            // Not Base64 - fall through to the raw string.
+        }
+        if (bytes == null) {
+            bytes = secret.getBytes(StandardCharsets.UTF_8);
+        }
+        if (bytes.length < 32) {
+            try {
+                bytes = MessageDigest.getInstance("SHA-256").digest(bytes);
+            } catch (NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 is not available", e);
+            }
+        }
+        return Keys.hmacShaKeyFor(bytes);
     }
     //Validate JTW Token
     public boolean validateJwtToken(String authToken) {

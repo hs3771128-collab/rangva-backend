@@ -27,6 +27,6 @@ USER app
 EXPOSE 8080
 
 # Free instances usually have 512 MB RAM: keep the JVM footprint small.
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=55 -XX:+UseSerialGC -XX:MaxMetaspaceSize=160m -Xss512k"
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=45 -XX:MaxMetaspaceSize=128m -Xss512k -XX:+UseSerialGC"
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]
